@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f17">
+<title>WebRTC P2P 加密聊天室</title>
+<style>
+  :root {
+    --bg-body: #0b0f17;
+    --bg-app: #141a24;
+    --bg-header: #0f141c;
+    --bg-panel: #1e2733;
+    --bg-panel-hover: #253141;
+    --border: #2a3342;
+    --border-light: #2f3e52;
+    --text: #e6edf5;
+    --text-dim: #b0c4de;
+    --text-muted: #8a9bb5;
+    --accent: #3b82f6;
+    --accent-strong: #2563eb;
+    --success: #8bc34a;
+    --danger: #f87171;
+    --radius: 16px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    background: var(--bg-body);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    padding: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .chat-app {
+    width: 100%;
+    max-width: 1280px;
+    height: 100vh;
+    height: 100dvh;
+    background: var(--bg-app);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+  @media (min-width: 900px) {
+    body { padding: 12px; align-items: center; }
+    .chat-app { height: 92vh; max-height: 900px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,.6); border: 1px solid var(--border); }
+  }
+
+  /* ============ 头部 ============ */
+  .header {
+    padding: 10px 14px calc(10px + var(--safe-top));
+    padding-top: calc(10px + var(--safe-top));
+    background: var(--bg-header);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    flex-shrink: 0;
+  }
+  .room-info { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+  .room-uuid {
+    background: var(--bg-panel);
+    padding: 7px 12px;
+    border-radius: 40px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .78rem;
+    color: var(--text-dim);
+    border: 1px solid var(--border-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+    cursor: pointer;
+    transition: background .2s;
+    flex-shrink: 1;
+  }
+  .room-uuid:active { background: var(--bg-panel-hover); }
+  @media (hover: hover) { .room-uuid:hover { background: var(--bg-panel-hover); } }
+  .user-name-area { display: flex; align-items: center; flex: 0 1 140px; min-width: 100px; }
+  .user-name-area input {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 40px;
+    padding: 7px 12px;
+    color: var(--text);
+    font-size: .82rem;
+    width: 100%;
+    outline: none;
+    transition: border .2s, box-shadow .2s;
+  }
+  .user-name-area input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.2); }
+  .status-badge {
+    background: rgba(139,195,74,.12);
+    color: var(--success);
+    padding: 5px 10px;
+    border-radius: 40px;
+    font-size: .68rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgba(139,195,74,.3);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .status-badge.offline { background: rgba(248,113,113,.12); color: var(--danger); border-color: rgba(248,113,113,.3); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+  .offline .dot { background: var(--danger); }
+  .participants-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-panel);
+    padding: 5px 10px;
+    border-radius: 40px;
+    font-size: .68rem;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .toolbar { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+
+  /* ============ 按钮 ============ */
+  .btn {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    padding: 7px 12px;
+    border-radius: 40px;
+    color: #d0dae8;
+    font-size: .78rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: background .15s, border-color .15s, transform .1s;
+    white-space: nowrap;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .btn:active { transform: scale(.96); }
+  @media (hover: hover) { .btn:hover { background: var(--bg-panel-hover); border-color: var(--accent); } }
+  .btn.danger:hover { background: rgba(248,113,113,.15); border-color: var(--danger); color: var(--danger); }
+  .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+  .btn.primary:hover { background: #1d4ed8; }
+  .btn:disabled { opacity: .4; pointer-events: none; }
+
+  /* ============ 加入群组栏 ============ */
+  .join-room-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: #0a0e15;
+    border-bottom: 1px solid #1a222e;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .join-room-bar .hint { font-size: .72rem; color: #6b7a90; white-space: nowrap; }
+  .join-room-bar input {
+    flex: 1;
+    min-width: 160px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 40px;
+    padding: 8px 14px;
+    color: var(--text);
+    font-size: .78rem;
+    outline: none;
+    font-family: ui-monospace, monospace;
+    transition: border .2s, box-shadow .2s;
+  }
+  .join-room-bar input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.2); }
+
+  /* ============ 消息区 ============ */
+  .chat-main {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 14px 14px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+  .chat-main:empty::before {
+    content: '🔐 端到端加密聊天室\n发送第一条消息开始对话';
+    white-space: pre-line;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: .85rem;
+    margin: auto;
+    padding: 40px 20px;
+    opacity: .6;
+    line-height: 2;
+  }
+  .message { display: flex; flex-direction: column; max-width: 82%; animation: fadeIn .2s; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .message.own { align-self: flex-end; align-items: flex-end; }
+  .message.other { align-self: flex-start; align-items: flex-start; }
+  .message-meta { display: flex; gap: 6px; font-size: .66rem; color: var(--text-muted); margin-bottom: 3px; padding: 0 6px; }
+  .message.own .message-meta { flex-direction: row-reverse; }
+  .sender-name { font-weight: 600; color: #b0c8e5; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .message-time { opacity: .7; }
+  .bubble {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 9px 13px;
+    color: var(--text);
+    font-size: .9rem;
+    line-height: 1.5;
+    word-break: break-word;
+    max-width: 100%;
+    box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  }
+  .message.own .bubble { background: var(--accent-strong); border-color: #1d4ed8; color: #fff; }
+  .bubble img { max-width: 100%; max-height: 280px; border-radius: 10px; margin-top: 4px; display: block; }
+  .file-attachment {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0,0,0,.2);
+    padding: 8px 12px;
+    border-radius: 10px;
+    margin-top: 6px;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,.08);
+    transition: background .15s;
+  }
+  .file-attachment:active { background: rgba(0,0,0,.35); }
+  @media (hover: hover) { .file-attachment:hover { background: rgba(0,0,0,.3); } }
+  .file-icon { font-size: 1.5rem; flex-shrink: 0; }
+  .file-info { flex: 1; font-size: .78rem; word-break: break-all; min-width: 0; }
+  .file-info > div:first-child { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .message-actions { display: flex; gap: 5px; margin-top: 4px; opacity: 0; transition: opacity .15s; padding: 0 6px; }
+  @media (hover: none) { .message-actions { opacity: .85; } }
+  .message:hover .message-actions { opacity: 1; }
+  .message.own .message-actions { justify-content: flex-end; }
+  .action-icon {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 30px;
+    padding: 3px 9px;
+    font-size: .66rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: .15s;
+    user-select: none;
+  }
+  .action-icon:active { background: #2a3a4e; }
+  @media (hover: hover) {
+    .action-icon:hover { background: #2a3a4e; border-color: var(--accent); color: #fff; }
+    .action-icon.danger:hover { background: rgba(248,113,113,.15); border-color: var(--danger); color: var(--danger); }
+  }
+
+  /* ============ 输入区 ============ */
+  .input-area {
+    background: var(--bg-header);
+    border-top: 1px solid var(--border);
+    padding: 10px 14px calc(10px + var(--safe-bottom));
+    flex-shrink: 0;
+  }
+  .input-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .text-input-wrapper { flex: 1; display: flex; gap: 6px; min-width: 140px; }
+  .text-input-wrapper input {
+    flex: 1;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 40px;
+    padding: 11px 16px;
+    color: #fff;
+    font-size: 16px;
+    outline: none;
+    transition: border .2s, box-shadow .2s;
+    min-width: 0;
+  }
+  .text-input-wrapper input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+  .emoji-picker { position: relative; }
+  .emoji-grid {
+    position: absolute;
+    bottom: 48px;
+    left: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 16px;
+    padding: 10px;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+    width: 300px;
+    max-width: calc(100vw - 28px);
+    box-shadow: 0 20px 40px rgba(0,0,0,.6);
+    z-index: 100;
+    display: none;
+  }
+  .emoji-grid.show { display: grid; }
+  .emoji-item { font-size: 1.35rem; cursor: pointer; text-align: center; padding: 3px; border-radius: 8px; transition: background .1s; user-select: none; }
+  .emoji-item:active { background: var(--border-light); }
+  @media (hover: hover) { .emoji-item:hover { background: var(--border-light); } }
+  .hidden-file { display: none; }
+
+  /* ============ 滚动条 ============ */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a3342; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3b4b60; }
+
+  /* ============ Toast ============ */
+  .toast {
+    position: fixed;
+    top: calc(20px + var(--safe-top));
+    right: 16px;
+    left: 16px;
+    max-width: 360px;
+    margin-left: auto;
+    background: var(--bg-panel);
+    border-left: 4px solid var(--accent);
+    color: var(--text);
+    padding: 11px 16px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    font-size: .84rem;
+    z-index: 9999;
+    animation: slideIn .2s;
+    word-break: break-word;
+  }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ============ 自定义确认弹窗（替代 confirm） ============ */
+  .modal-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+    animation: fadeInMask .15s;
+  }
+  @keyframes fadeInMask { from { opacity: 0; } to { opacity: 1; } }
+  .modal-box {
+    background: var(--bg-app);
+    border: 1px solid var(--border-light);
+    border-radius: 18px;
+    padding: 22px 20px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.7);
+    animation: popIn .18s;
+  }
+  @keyframes popIn { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal-title { font-size: 1rem; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .modal-text { font-size: .86rem; color: var(--text-muted); margin-bottom: 18px; line-height: 1.5; word-break: break-word; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .modal-actions .btn { padding: 9px 18px; font-size: .84rem; }
+
+  /* ============ 移动端适配 ============ */
+  @media (max-width: 640px) {
+    .header { padding: 8px 10px calc(8px + var(--safe-top)); gap: 6px; }
+    .room-uuid { font-size: .72rem; max-width: 120px; padding: 6px 10px; }
+    .user-name-area { flex: 1 1 90px; }
+    .user-name-area input { font-size: .76rem; padding: 6px 10px; }
+    .status-badge, .participants-badge { font-size: .62rem; padding: 4px 8px; }
+    .btn { font-size: .74rem; padding: 7px 11px; }
+    .join-room-bar { padding: 6px 10px; gap: 6px; }
+    .join-room-bar .hint { display: none; }
+    .join-room-bar input { font-size: .74rem; padding: 7px 12px; }
+    .chat-main { padding: 10px 10px 0; }
+    .message { max-width: 90%; }
+    .bubble { font-size: .86rem; padding: 8px 11px; }
+    .input-area { padding: 8px 10px calc(8px + var(--safe-bottom)); }
+    .input-row { gap: 5px; }
+    .text-input-wrapper input { padding: 10px 14px; }
+    .emoji-grid { width: 280px; max-width: calc(100vw - 20px); }
+  }
+  @media (max-width: 380px) {
+    .room-uuid { max-width: 90px; }
+    .user-name-area { flex: 0 1 80px; }
+    .participants-badge { display: none; }
+  }
+
+  /* 横屏时高度压缩 */
+  @media (max-height: 500px) and (orientation: landscape) {
+    .header { padding: 6px 10px; }
+    .join-room-bar { padding: 5px 10px; }
+    .chat-main { padding: 8px 10px 0; }
+    .input-area { padding: 6px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="chat-app">
+  <div class="header">
+    <div class="room-info">
+      <div class="room-uuid" id="roomUuidDisplay" title="点击复制群组UUID">群组: 加载中...</div>
+      <button class="btn" id="copyRoomBtn" title="复制UUID">📋</button>
+    </div>
+    <div class="user-name-area">
+      <input type="text" id="userNameInput" placeholder="你的名称" maxlength="20">
+    </div>
+    <div class="status-badge" id="connectionStatus"><span class="dot"></span> 连接中</div>
+    <div class="participants-badge" id="participantsCount">👥 1</div>
+    <div class="toolbar">
+      <button class="btn danger" id="clearAllBtn" title="清空所有消息（所有端）">🗑️</button>
+    </div>
+  </div>
+
+  <div class="join-room-bar">
+    <span class="hint">🔗 加入群组:</span>
+    <input type="text" id="joinRoomInput" placeholder="粘贴群组 UUID 加入..." spellcheck="false" autocomplete="off">
+    <button class="btn primary" id="joinRoomBtn">加入</button>
+    <button class="btn" id="newRoomBtn" title="生成全新群组UUID">🆕 新建</button>
+  </div>
+
+  <div class="chat-main" id="chatMain"></div>
+  <div class="input-area">
+    <div class="input-row">
+      <div class="emoji-picker">
+        <button class="btn" id="emojiToggleBtn" aria-label="Emoji">😊</button>
+        <div class="emoji-grid" id="emojiGrid"></div>
+      </div>
+      <button class="btn" id="imageBtn" title="发送图片">🖼️</button>
+      <button class="btn" id="fileBtn" title="发送文件">📎</button>
+      <input type="file" id="imageInput" class="hidden-file" accept="image/*">
+      <input type="file" id="fileInput" class="hidden-file">
+      <div class="text-input-wrapper">
+        <input type="text" id="messageInput" placeholder="输入消息..." maxlength="2000" autocomplete="off" enterkeyhint="send">
+      </div>
+      <button class="btn primary" id="sendBtn">发送</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ============ 工具函数 ============
+  const $ = id => document.getElementById(id);
+  const generateUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // ---- 本地存储键 ----
+  const LS_KEYS = {
+    ROOM: 'chat_room_uuid',
+    NAME: 'chat_user_name',
+    HISTORY_PREFIX: 'chat_history_',
+  };
+
+  // ============ 自定义确认弹窗（替代 confirm） ============
+  function showConfirm(title, text, onOk, okText) {
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.innerHTML =
+      '<div class="modal-title">' + escapeHtml(title) + '</div>' +
+      '<div class="modal-text">' + escapeHtml(text) + '</div>' +
+      '<div class="modal-actions">' +
+        '<button class="btn" data-act="cancel">取消</button>' +
+        '<button class="btn primary" data-act="ok">' + escapeHtml(okText || '确定') + '</button>' +
+      '</div>';
+    mask.appendChild(box);
+    document.body.appendChild(mask);
+    const close = () => { mask.remove(); };
+    box.querySelector('[data-act="cancel"]').addEventListener('click', close);
+    box.querySelector('[data-act="ok"]').addEventListener('click', () => { close(); onOk && onOk(); });
+    mask.addEventListener('click', e => { if (e.target === mask) close(); });
+    const onKey = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+    document.addEventListener('keydown', onKey);
+  }
+
+  // ============ 通用复制函数（修复提示文案串台） ============
+  function copyText(text, successMsg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => showToast(successMsg || '已复制'))
+        .catch(() => fallbackCopy(text, successMsg));
+    } else {
+      fallbackCopy(text, successMsg);
+    }
+  }
+
+  function fallbackCopy(text, successMsg) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      showToast(successMsg || '已复制');
+    } catch(e) {
+      showToast('复制失败，请手动复制');
+    }
+  }
+
+  // ============ 历史记录持久化 ============
+  const HISTORY_LIMIT = 100;
+  function loadHistory(roomUUID) {
+    try {
+      const raw = localStorage.getItem(LS_KEYS.HISTORY_PREFIX + roomUUID);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch(e) { return []; }
+  }
+  function saveHistory(roomUUID, msg) {
+    try {
+      if (msg.type === 'image' || msg.type === 'file') return;
+      const list = loadHistory(roomUUID);
+      if (list.some(m => m.id === msg.id)) return;
+      list.push(msg);
+      if (list.length > HISTORY_LIMIT) list.splice(0, list.length - HISTORY_LIMIT);
+      localStorage.setItem(LS_KEYS.HISTORY_PREFIX + roomUUID, JSON.stringify(list));
+    } catch(e) {}
+  }
+  function clearHistory(roomUUID) {
+    try { localStorage.removeItem(LS_KEYS.HISTORY_PREFIX + roomUUID); } catch(e) {}
+  }
+
+  // ============ 房间UUID恢复 ============
+  function resolveInitialRoom() {
+    const urlParams = new URLSearchParams(location.search);
+    const roomParam = urlParams.get('room');
+    if (roomParam && UUID_RE.test(roomParam)) return roomParam;
+    try {
+      const saved = localStorage.getItem(LS_KEYS.ROOM);
+      if (saved && UUID_RE.test(saved)) return saved;
+    } catch(e) {}
+    return generateUUID();
+  }
+
+  function persistRoom(uuid) {
+    try { localStorage.setItem(LS_KEYS.ROOM, uuid); } catch(e) {}
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set('room', uuid);
+      history.replaceState(null, '', url.toString());
+    } catch(e) {}
+  }
+
+  // ============ 加密解密 ============
+  const encrypt = (text, key) => {
+    try { return CryptoJS.AES.encrypt(text, key).toString(); }
+    catch(e) { return text; }
+  };
+  const decrypt = (cipher, key) => {
+    try {
+      const bytes = CryptoJS.AES.decrypt(cipher, key);
+      const result = bytes.toString(CryptoJS.enc.Utf8);
+      return result || null;
+    } catch(e) { return null; }
+  };
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : text;
+    return div.innerHTML;
+  }
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+  function showToast(msg) {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+  }
+
+  // ============ 状态 ============
+  const state = {
+    roomUUID: resolveInitialRoom(),
+    userName: (function() {
+      try {
+        const saved = localStorage.getItem(LS_KEYS.NAME);
+        if (saved) return saved;
+      } catch(e) {}
+      return '用户' + Math.floor(Math.random() * 1000);
+    })(),
+    peer: null,
+    myPeerId: null,
+    connections: new Map(),
+    messageMap: new Map(),
+    discoveryTimer: null,
+    reconnectTimer: null,
+    isDestroyed: false,
+    isRegistering: false,
+    switchingRoom: false,
+    initialDiscoverFired: false,
+    pendingRoomJoin: false,
+    discoveryFailCount: 0,
+  };
+
+  // ============ UI 引用 ============
+  const chatMain = $('chatMain');
+  const messageInput = $('messageInput');
+  const sendBtn = $('sendBtn');
+  const userNameInput = $('userNameInput');
+  const connectionStatus = $('connectionStatus');
+  const participantsCount = $('participantsCount');
+  const roomUuidDisplay = $('roomUuidDisplay');
+  const joinRoomInput = $('joinRoomInput');
+
+  function renderRoomInfo() {
+    roomUuidDisplay.textContent = '群组: ' + state.roomUUID.slice(0, 13) + '...';
+    roomUuidDisplay.title = '点击复制完整UUID:\n' + state.roomUUID;
+    persistRoom(state.roomUUID);
+  }
+
+  renderRoomInfo();
+  userNameInput.value = state.userName;
+
+  // ============ UUID复制 ============
+  function copyUUID() {
+    copyText(state.roomUUID, '群组UUID已复制');
+  }
+  roomUuidDisplay.addEventListener('click', copyUUID);
+  $('copyRoomBtn').addEventListener('click', copyUUID);
+
+  userNameInput.addEventListener('change', () => {
+    const newName = userNameInput.value.trim() || '匿名';
+    state.userName = newName;
+    userNameInput.value = newName;
+    try { localStorage.setItem(LS_KEYS.NAME, newName); } catch(e) {}
+    broadcastPacket({ type: 'name_update', name: newName, sender: state.myPeerId });
+  });
+
+  // ============ 消息 UI ============
+  function addMessageToUI(msg, { persist = true } = {}) {
+    const { id, type, senderName, timestamp, content, own,
+            fileName, fileSize, dataUrl } = msg;
+    if (state.messageMap.has(id)) return;
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message ' + (own ? 'own' : 'other');
+    msgDiv.dataset.msgId = id;
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'message-meta';
+    metaDiv.innerHTML =
+      '<span class="sender-name">' + escapeHtml(senderName || '未知') + '</span>' +
+      '<span class="message-time">' + new Date(timestamp).toLocaleTimeString() + '</span>';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+
+    if (type === 'text') {
+      bubble.textContent = content;
+    } else if (type === 'image') {
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = fileName || 'image';
+      img.loading = 'lazy';
+      bubble.appendChild(img);
+    } else if (type === 'file') {
+      const fileDiv = document.createElement('div');
+      fileDiv.className = 'file-attachment';
+      fileDiv.innerHTML =
+        '<span class="file-icon">📄</span>' +
+        '<div class="file-info">' +
+          '<div>' + escapeHtml(fileName || '文件') + '</div>' +
+          '<div style="font-size:.7rem;opacity:.7;">' + formatFileSize(fileSize || 0) + '</div>' +
+        '</div>' +
+        '<span style="font-size:1rem;">⬇️</span>';
+      fileDiv.addEventListener('click', () => {
+        try {
+          const a = document.createElement('a');
+          a.href = dataUrl;
+          a.download = fileName || 'download';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } catch(e) { showToast('下载失败'); }
+      });
+      bubble.appendChild(fileDiv);
+    }
+
+    msgDiv.appendChild(metaDiv);
+    msgDiv.appendChild(bubble);
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'message-actions';
+
+    if (type === 'text') {
+      const copyBtn = document.createElement('span');
+      copyBtn.className = 'action-icon';
+      copyBtn.textContent = '📋 复制';
+      copyBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        copyText(content, '消息已复制');
+      });
+      actionsDiv.appendChild(copyBtn);
+    }
+
+    if (own) {
+      const recallBtn = document.createElement('span');
+      recallBtn.className = 'action-icon danger';
+      recallBtn.textContent = '↩️ 撤回';
+      recallBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        showConfirm('撤回消息', '确定要撤回这条消息吗？所有端将同时删除。', () => {
+          broadcastPacket({ type: 'recall', msgId: id, sender: state.myPeerId });
+          removeMessage(id);
+        }, '撤回');
+      });
+      actionsDiv.appendChild(recallBtn);
+    }
+
+    msgDiv.appendChild(actionsDiv);
+    chatMain.appendChild(msgDiv);
+    chatMain.scrollTop = chatMain.scrollHeight;
+
+    state.messageMap.set(id, { element: msgDiv, data: msg });
+
+    if (persist) {
+      saveHistory(state.roomUUID, msg);
+    }
+  }
+
+  function removeMessage(msgId) {
+    const item = state.messageMap.get(msgId);
+    if (item) {
+      item.element.remove();
+      state.messageMap.delete(msgId);
+      try {
+        const list = loadHistory(state.roomUUID).filter(m => m.id !== msgId);
+        localStorage.setItem(LS_KEYS.HISTORY_PREFIX + state.roomUUID, JSON.stringify(list));
+      } catch(e) {}
+    }
+  }
+
+  function clearMessagesUI({ persist = true } = {}) {
+    chatMain.innerHTML = '';
+    state.messageMap.clear();
+    if (persist) clearHistory(state.roomUUID);
+  }
+
+  // ============ 恢复历史消息 ============
+  function restoreHistory() {
+    const history = loadHistory(state.roomUUID);
+    history.forEach(msg => {
+      addMessageToUI(msg, { persist: false });
+    });
+    if (history.length > 0) {
+      setTimeout(() => { chatMain.scrollTop = chatMain.scrollHeight; }, 50);
+    }
+  }
+
+  // ============ 广播 ============
+  function broadcastPacket(packet) {
+    if (!packet || !packet.type) return;
+    let str;
+    try { str = JSON.stringify(packet); }
+    catch(e) { return; }
+    state.connections.forEach(({ conn }) => {
+      if (conn && conn.open) {
+        try { conn.send(str); }
+        catch(e) { console.warn('发送失败', e); }
+      }
+    });
+  }
+
+  // ============ 发送消息 ============
+  function sendMessage() {
+    const text = messageInput.value.trim();
+    if (!text) return;
+
+    if (!state.peer || !state.peer.open) {
+      showToast('正在连接群组，请稍候...');
+      return;
+    }
+
+    const msgId = generateUUID();
+    const timestamp = Date.now();
+    const messageData = {
+      id: msgId, type: 'text', sender: state.myPeerId,
+      senderName: state.userName, timestamp, content: text
+    };
+    const encrypted = encrypt(JSON.stringify(messageData), state.roomUUID);
+    broadcastPacket({ type: 'encrypted', payload: encrypted });
+    addMessageToUI(Object.assign({}, messageData, { own: true }));
+    messageInput.value = '';
+    messageInput.focus();
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  messageInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // ============ 清空 ============
+  $('clearAllBtn').addEventListener('click', () => {
+    showConfirm('清空聊天记录', '确定清空所有端的消息记录吗？此操作不可撤销。', () => {
+      broadcastPacket({ type: 'clear_all', sender: state.myPeerId });
+      clearMessagesUI();
+      showToast('已清空所有消息');
+    }, '清空');
+  });
+
+  // ============ 文件 ============
+  $('imageBtn').addEventListener('click', () => $('imageInput').click());
+  $('fileBtn').addEventListener('click', () => $('fileInput').click());
+
+  function handleFile(file, isImage) {
+    if (!file) return;
+    const MAX_SIZE = 4 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      showToast('文件过大（最大 4MB）');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const msgId = generateUUID();
+      const timestamp = Date.now();
+      const messageData = {
+        id: msgId,
+        type: isImage ? 'image' : 'file',
+        sender: state.myPeerId,
+        senderName: state.userName,
+        timestamp,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        dataUrl
+      };
+      const encrypted = encrypt(JSON.stringify(messageData), state.roomUUID);
+      broadcastPacket({ type: 'encrypted', payload: encrypted });
+      addMessageToUI(Object.assign({}, messageData, { own: true }), { persist: false });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  $('imageInput').addEventListener('change', e => {
+    handleFile(e.target.files[0], true);
+    e.target.value = '';
+  });
+  $('fileInput').addEventListener('change', e => {
+    handleFile(e.target.files[0], false);
+    e.target.value = '';
+  });
+
+  // ============ Emoji ============
+  const emojiList = ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤝','🙏','✍️','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🦷','👀','👁️','👅','👄'];
+
+  function initEmoji() {
+    const grid = $('emojiGrid');
+    const frag = document.createDocumentFragment();
+    emojiList.forEach(emoji => {
+      const span = document.createElement('span');
+      span.className = 'emoji-item';
+      span.textContent = emoji;
+      span.addEventListener('click', e => {
+        e.stopPropagation();
+        messageInput.value += emoji;
+        messageInput.focus();
+      });
+      frag.appendChild(span);
+    });
+    grid.appendChild(frag);
+
+    $('emojiToggleBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      grid.classList.toggle('show');
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.emoji-picker')) {
+        grid.classList.remove('show');
+      }
+    });
+  }
+
+  // ============ 状态更新 ============
+  function updateConnectionStatus() {
+    if (state.peer && state.peer.open && !state.peer.disconnected) {
+      connectionStatus.innerHTML = '<span class="dot"></span> 在线';
+      connectionStatus.classList.remove('offline');
+    } else {
+      connectionStatus.innerHTML = '<span class="dot"></span> 离线';
+      connectionStatus.classList.add('offline');
+    }
+    participantsCount.textContent = '👥 ' + (state.connections.size + 1);
+  }
+
+  // ============ 处理数据包 ============
+  function handlePacket(packet, conn) {
+    if (!packet || typeof packet !== 'object') return;
+
+    switch (packet.type) {
+      case 'handshake':
+        {
+          const peer = state.connections.get(conn.peer);
+          if (peer) peer.name = packet.name || '匿名';
+        }
+        updateConnectionStatus();
+        break;
+      case 'name_update':
+        {
+          const peer = state.connections.get(conn.peer);
+          if (peer) peer.name = packet.name || '匿名';
+        }
+        break;
+      case 'clear_all':
+        clearMessagesUI();
+        showToast('聊天记录已被清空');
+        break;
+      case 'recall':
+        if (packet.sender !== state.myPeerId) removeMessage(packet.msgId);
+        break;
+      case 'encrypted':
+        {
+          const decrypted = decrypt(packet.payload, state.roomUUID);
+          if (!decrypted) return;
+          let msgData;
+          try { msgData = JSON.parse(decrypted); }
+          catch(e) { return; }
+          if (msgData.sender === state.myPeerId) return;
+          addMessageToUI(Object.assign({}, msgData, { own: false }));
+        }
+        break;
+    }
+  }
+
+  // ============ 连接设置 ============
+  function setupConnection(conn) {
+    if (state.connections.has(conn.peer)) {
+      const existing = state.connections.get(conn.peer);
+      if (existing.conn && existing.conn.open) return;
+    }
+
+    conn.on('open', () => {
+      state.connections.set(conn.peer, { conn, name: '未知' });
+      try {
+        conn.send(JSON.stringify({
+          type: 'handshake',
+          name: state.userName,
+          sender: state.myPeerId
+        }));
+      } catch(e) {}
+      updateConnectionStatus();
+    });
+
+    conn.on('data', data => {
+      try {
+        const packet = typeof data === 'string' ? JSON.parse(data) : data;
+        handlePacket(packet, conn);
+      } catch(e) {}
+    });
+
+    conn.on('close', () => {
+      state.connections.delete(conn.peer);
+      updateConnectionStatus();
+    });
+
+    conn.on('error', () => {
+      state.connections.delete(conn.peer);
+      updateConnectionStatus();
+    });
+  }
+
+  // ============ 信令发现 (PeerBasket) ============
+  const PEERBASKET_API = 'https://peerbasket.bittu.dev';
+
+  async function registerAndDiscover() {
+    if (state.isDestroyed || state.isRegistering || !state.peer || !state.peer.open) return;
+    if (!state.myPeerId) return;
+
+    state.isRegistering = true;
+    const currentRoom = state.roomUUID;
+    try {
+      const response = await fetch(PEERBASKET_API + '/basket/' + encodeURIComponent(currentRoom), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ peer_id: state.myPeerId }),
+        keepalive: true,
+      });
+
+      if (response.status === 429) {
+        state.discoveryFailCount = Math.min(state.discoveryFailCount + 1, 5);
+        throw new Error('限流');
+      }
+
+      state.discoveryFailCount = 0;
+
+      if (!response.ok) throw new Error('PeerBasket 请求失败: ' + response.status);
+
+      const data = await response.json();
+      if (currentRoom !== state.roomUUID) return;
+
+      const peers = data.peers || [];
+
+      peers.forEach(peerId => {
+        if (peerId === state.myPeerId) return;
+        if (state.connections.has(peerId)) return;
+        try {
+          const conn = state.peer.connect(peerId, { reliable: true });
+          setupConnection(conn);
+        } catch(e) {}
+      });
+
+      if (!state.initialDiscoverFired) {
+        state.initialDiscoverFired = true;
+      }
+    } catch(e) {
+      console.warn('[PeerBasket] 注册/发现失败:', e.message);
+    } finally {
+      state.isRegistering = false;
+    }
+  }
+
+  function triggerImmediateDiscovery() {
+    registerAndDiscover();
+    setTimeout(registerAndDiscover, 600);
+    setTimeout(registerAndDiscover, 1500);
+    setTimeout(registerAndDiscover, 3000);
+  }
+
+  function startDiscovery() {
+    if (state.discoveryTimer) clearInterval(state.discoveryTimer);
+    triggerImmediateDiscovery();
+    const baseInterval = 15000;
+    const backoff = state.discoveryFailCount * 5000;
+    const interval = Math.min(baseInterval + backoff, 60000);
+    state.discoveryTimer = setInterval(registerAndDiscover, interval);
+  }
+
+  function stopDiscovery() {
+    if (state.discoveryTimer) {
+      clearInterval(state.discoveryTimer);
+      state.discoveryTimer = null;
+    }
+  }
+
+  // ============ 初始化 PeerJS ============
+  function makePeerId() {
+    const rand = Math.random().toString(36).slice(2, 10);
+    return 'p' + Date.now().toString(36) + rand;
+  }
+
+  function destroyPeer() {
+    stopDiscovery();
+    state.connections.forEach(({ conn }) => {
+      try { conn.close(); } catch(e) {}
+    });
+    state.connections.clear();
+    updateConnectionStatus();
+
+    if (state.peer) {
+      try { state.peer.destroy(); } catch(e) {}
+      state.peer = null;
+    }
+    state.myPeerId = null;
+  }
+
+  function initPeer() {
+    const myPeerId = makePeerId();
+    state.myPeerId = myPeerId;
+
+    const peer = new Peer(myPeerId, {
+      debug: 0,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.miwifi.com:3478' },
+          { urls: 'stun:stun.chat.bilibili.com:3478' },
+          { urls: 'stun:stun.hitv.com:3478' },
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
+    });
+
+    state.peer = peer;
+
+    peer.on('open', id => {
+      state.myPeerId = id;
+      updateConnectionStatus();
+
+      if (state.pendingRoomJoin) {
+        state.pendingRoomJoin = false;
+        showToast('已加入群组');
+      }
+
+      startDiscovery();
+    });
+
+    peer.on('connection', conn => {
+      setupConnection(conn);
+    });
+
+    peer.on('error', err => {
+      console.warn('[Peer错误]', err.type, err.message);
+      if (err.type === 'unavailable-id') {
+        showToast('ID冲突，正在重新连接...');
+        try { peer.destroy(); } catch(e) {}
+        setTimeout(initPeer, 1000);
+        return;
+      }
+      updateConnectionStatus();
+      if (!state.isDestroyed && !state.switchingRoom && err.type !== 'peer-unavailable') {
+        scheduleReconnect();
+      }
+    });
+
+    peer.on('disconnected', () => {
+      updateConnectionStatus();
+      if (!state.isDestroyed && !state.switchingRoom) {
+        try { peer.reconnect(); }
+        catch(e) { scheduleReconnect(); }
+      }
+    });
+
+    peer.on('close', () => {
+      updateConnectionStatus();
+      if (!state.isDestroyed && !state.switchingRoom) scheduleReconnect();
+    });
+  }
+
+  function scheduleReconnect() {
+    if (state.reconnectTimer || state.isDestroyed || state.switchingRoom) return;
+    state.reconnectTimer = setTimeout(() => {
+      state.reconnectTimer = null;
+      if (state.isDestroyed || state.switchingRoom) return;
+      destroyPeer();
+      initPeer();
+    }, 3000);
+  }
+
+  // ============ 切换房间 ============
+  function switchRoom(newUUID, { silent = false } = {}) {
+    if (!UUID_RE.test(newUUID)) {
+      showToast('UUID 格式无效');
+      return false;
+    }
+    if (newUUID === state.roomUUID) {
+      showToast('已在该群组中');
+      return false;
+    }
+
+    state.switchingRoom = true;
+    state.initialDiscoverFired = false;
+    state.pendingRoomJoin = true;
+    state.discoveryFailCount = 0;
+
+    destroyPeer();
+    clearMessagesUI();
+
+    state.roomUUID = newUUID;
+    renderRoomInfo();
+    joinRoomInput.value = '';
+
+    // 立即从 localStorage 恢复该房间历史（不依赖连接）
+    restoreHistory();
+
+    setTimeout(() => {
+      state.switchingRoom = false;
+      if (state.isDestroyed) return;
+      initPeer();
+      updateConnectionStatus();
+    }, 200);
+
+    return true;
+  }
+
+  // ============ 加入/新建房间 UI ============
+  $('joinRoomBtn').addEventListener('click', () => {
+    const raw = joinRoomInput.value.trim();
+    if (!raw) {
+      showToast('请输入群组 UUID');
+      return;
+    }
+    if (!UUID_RE.test(raw)) {
+      showToast('UUID 格式不正确');
+      return;
+    }
+    switchRoom(raw);
+  });
+
+  joinRoomInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('joinRoomBtn').click();
+    }
+  });
+
+  $('newRoomBtn').addEventListener('click', () => {
+    const newUUID = generateUUID();
+    if (switchRoom(newUUID, { silent: true })) {
+      showToast('已创建新群组: ' + newUUID.slice(0, 13) + '...');
+    }
+  });
+
+  // ============ 初始化 ============
+  function init() {
+    initEmoji();
+    restoreHistory();
+    initPeer();
+    updateConnectionStatus();
+
+    window.addEventListener('beforeunload', () => {
+      state.isDestroyed = true;
+      destroyPeer();
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
